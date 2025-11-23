@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { databases, APPWRITE_CONFIG } from "@/lib/appwrite";
+import { Query } from "appwrite";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -27,14 +28,24 @@ const Menu = () => {
   const { data: products, isLoading } = useQuery({
     queryKey: ["products"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("products")
-        .select("*")
-        .eq("is_available", true)
-        .order("category", { ascending: true });
+      const response = await databases.listDocuments(
+        APPWRITE_CONFIG.databaseId,
+        APPWRITE_CONFIG.collections.products,
+        [
+          Query.equal("is_available", true),
+          Query.orderAsc("category")
+        ]
+      );
 
-      if (error) throw error;
-      return data as Product[];
+      return response.documents.map((doc) => ({
+        id: doc.$id,
+        name: doc.name,
+        description: doc.description,
+        price: doc.price,
+        category: doc.category,
+        image_url: doc.image_url,
+        is_available: doc.is_available,
+      })) as Product[];
     },
   });
 

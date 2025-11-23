@@ -9,12 +9,31 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
-import { supabase } from "@/integrations/supabase/client";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { databases, account, APPWRITE_CONFIG } from "@/lib/appwrite"; 
+import { ID } from "appwrite";
 import { toast } from "sonner";
+
+const DORMS = [
+  "Abu Bakar",
+  "Usman",
+  "Umar",
+  "Khodijah",
+  "Fatimah",
+  "Aisyah"
+] as const;
 
 const checkoutSchema = z.object({
   studentName: z.string().min(1, "Nama harus diisi"),
-  studentClass: z.string().min(1, "Kelas harus diisi"),
+  studentDorm: z.enum(DORMS, {
+    required_error: "Silakan pilih asrama",
+  }),
   roomNumber: z.string().min(1, "Nomor kamar harus diisi"),
   phone: z.string().min(10, "Nomor HP minimal 10 digit"),
   deliveryMethod: z.enum(["pickup", "delivery"]),
@@ -41,6 +60,8 @@ const Checkout = () => {
     register,
     handleSubmit,
     watch,
+    setValue,
+    trigger,
     formState: { errors },
   } = useForm<CheckoutForm>({
     resolver: zodResolver(checkoutSchema),
@@ -70,7 +91,7 @@ const Checkout = () => {
   const onSubmit = async (data: CheckoutForm) => {
     setLoading(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = await account.get();
       
       if (!user) {
         toast.error("Anda harus login terlebih dahulu");
@@ -78,13 +99,14 @@ const Checkout = () => {
         return;
       }
 
-      // Create order
-      const { data: order, error: orderError } = await supabase
-        .from("orders")
-        .insert({
-          user_id: user.id,
+      const order = await databases.createDocument(
+        APPWRITE_CONFIG.databaseId,
+        APPWRITE_CONFIG.collections.orders,
+        ID.unique(),
+        {
+          user_id: user.$id,
           student_name: data.studentName,
-          student_class: data.studentClass,
+          student_dorm: data.studentDorm, 
           room_number: data.roomNumber,
           phone: data.phone,
           delivery_method: data.deliveryMethod,
@@ -93,32 +115,31 @@ const Checkout = () => {
           status: "pending",
           total_amount: totalPrice,
           notes: data.notes || null,
-        })
-        .select()
-        .single();
+          created_at: new Date().toISOString(),
+        }
+      );
 
-      if (orderError) throw orderError;
+      const promises = cart.map((item) => 
+        databases.createDocument(
+          APPWRITE_CONFIG.databaseId,
+          APPWRITE_CONFIG.collections.orderItems,
+          ID.unique(),
+          {
+            order_id: order.$id,
+            product_id: item.id,
+            quantity: item.quantity,
+            price: item.price,
+            product_name: item.name,
+          }
+        )
+      );
 
-      // Create order items
-      const orderItems = cart.map((item) => ({
-        order_id: order.id,
-        product_id: item.id,
-        quantity: item.quantity,
-        price: item.price,
-        product_name: item.name,
-      }));
+      await Promise.all(promises);
 
-      const { error: itemsError } = await supabase
-        .from("order_items")
-        .insert(orderItems);
-
-      if (itemsError) throw itemsError;
-
-      // Clear cart
       localStorage.removeItem("cart");
       
       toast.success("Pesanan berhasil dibuat!");
-      navigate(`/orders/${order.id}`);
+      navigate(`/orders/${order.$id}`);
     } catch (error: any) {
       console.error("Checkout error:", error);
       toast.error(error.message || "Gagal membuat pesanan");
@@ -162,22 +183,36 @@ const Checkout = () => {
 
                 <div className="grid md:grid-cols-2 gap-4">
                   <div>
-                    <Label htmlFor="studentClass">Kelas</Label>
-                    <Input
-                      id="studentClass"
-                      {...register("studentClass")}
-                      placeholder="Contoh: X-A"
-                    />
-                    {errors.studentClass && (
-                      <p className="text-sm text-destructive mt-1">{errors.studentClass.message}</p>
+                    <Label htmlFor="studentDorm">Asrama</Label>
+                    <Select 
+                      onValueChange={(value) => {
+                        setValue("studentDorm", value as any);
+                        trigger("studentDorm");
+                      }}
+                    >
+                      <SelectTrigger className="w-full mt-1">
+                        <SelectValue placeholder="Pilih Asrama" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {DORMS.map((dorm) => (
+                          <SelectItem key={dorm} value={dorm}>
+                            Asrama {dorm}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {errors.studentDorm && (
+                      <p className="text-sm text-destructive mt-1">{errors.studentDorm.message}</p>
                     )}
                   </div>
+
                   <div>
                     <Label htmlFor="roomNumber">Nomor Kamar</Label>
                     <Input
                       id="roomNumber"
                       {...register("roomNumber")}
-                      placeholder="Contoh: A-101"
+                      placeholder="Contoh: 101"
+                      className="mt-1"
                     />
                     {errors.roomNumber && (
                       <p className="text-sm text-destructive mt-1">{errors.roomNumber.message}</p>
@@ -228,11 +263,11 @@ const Checkout = () => {
               {deliveryMethod === "delivery" && (
                 <div className="mt-4 space-y-4">
                   <div>
-                    <Label htmlFor="deliveryAddress">Alamat Lengkap Asrama</Label>
+                    <Label htmlFor="deliveryAddress">Detail Lokasi (Gedung/Lantai)</Label>
                     <Input
                       id="deliveryAddress"
                       {...register("deliveryAddress")}
-                      placeholder="Contoh: Gedung A, Lantai 2, Kamar 201"
+                      placeholder="Contoh: Lantai 2, dekat tangga"
                     />
                   </div>
                 </div>

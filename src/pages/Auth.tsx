@@ -8,7 +8,8 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { supabase } from "@/integrations/supabase/client";
+import { account, databases, APPWRITE_CONFIG } from "@/lib/appwrite";
+import { ID, Permission, Role } from "appwrite";
 import { toast } from "sonner";
 import { ShoppingBag } from "lucide-react";
 
@@ -19,6 +20,7 @@ const loginSchema = z.object({
 
 const signupSchema = loginSchema.extend({
   fullName: z.string().min(1, "Nama harus diisi"),
+  phone: z.string().min(10, "Nomor HP minimal 10 digit"),
   confirmPassword: z.string(),
 }).refine((data) => data.password === data.confirmPassword, {
   message: "Password tidak cocok",
@@ -34,9 +36,10 @@ const Auth = () => {
 
   useEffect(() => {
     const checkUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        navigate("/menu");
+      try {
+        const user = await account.get();
+        if (user) navigate("/menu");
+      } catch (error) {
       }
     };
     checkUser();
@@ -50,16 +53,11 @@ const Auth = () => {
     resolver: zodResolver(signupSchema),
   });
 
-  const onLogin = async (data: LoginForm) => {
+  const onLogin = async (data: any) => {
     setLoading(true);
     try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email: data.email,
-        password: data.password,
-      });
-
-      if (error) throw error;
-
+      await account.createEmailPasswordSession(data.email, data.password);
+      
       toast.success("Login berhasil!");
       navigate("/menu");
     } catch (error: any) {
@@ -69,23 +67,28 @@ const Auth = () => {
     }
   };
 
-  const onSignup = async (data: SignupForm) => {
+  const onSignup = async (data: any) => {
     setLoading(true);
     try {
-      const { error } = await supabase.auth.signUp({
-        email: data.email,
-        password: data.password,
-        options: {
-          data: {
-            full_name: data.fullName,
-          },
-          emailRedirectTo: `${window.location.origin}/`,
+      const user = await account.create(ID.unique(), data.email, data.password, data.fullName);
+
+      await account.createEmailPasswordSession(data.email, data.password);
+      await databases.createDocument(
+        APPWRITE_CONFIG.databaseId,
+        APPWRITE_CONFIG.collections.profiles,
+        user.$id,
+        {
+          full_name: data.fullName,
+          phone: data.phone,
+          user_id: user.$id
         },
-      });
+        [
+          Permission.read(Role.user(user.$id)),
+          Permission.update(Role.user(user.$id))
+        ]
+      );
 
-      if (error) throw error;
-
-      toast.success("Registrasi berhasil! Silakan login.");
+      toast.success("Registrasi berhasil!");
       navigate("/menu");
     } catch (error: any) {
       toast.error(error.message || "Registrasi gagal");
@@ -122,7 +125,7 @@ const Auth = () => {
                     id="login-email"
                     type="email"
                     {...loginForm.register("email")}
-                    placeholder="email@example.com"
+                    placeholder="nama@gmail.com"
                   />
                   {loginForm.formState.errors.email && (
                     <p className="text-sm text-destructive mt-1">
@@ -168,13 +171,29 @@ const Auth = () => {
                   )}
                 </div>
 
+                {/* MODIFIKASI 3: Tambahkan Input Nomor HP */}
+                <div>
+                  <Label htmlFor="signup-phone">Nomor HP / WhatsApp</Label>
+                  <Input
+                    id="signup-phone"
+                    type="tel"
+                    {...signupForm.register("phone")}
+                    placeholder="08123456789"
+                  />
+                  {signupForm.formState.errors.phone && (
+                    <p className="text-sm text-destructive mt-1">
+                      {signupForm.formState.errors.phone.message}
+                    </p>
+                  )}
+                </div>
+
                 <div>
                   <Label htmlFor="signup-email">Email</Label>
                   <Input
                     id="signup-email"
                     type="email"
                     {...signupForm.register("email")}
-                    placeholder="email@example.com"
+                    placeholder="nama@gmail.com"
                   />
                   {signupForm.formState.errors.email && (
                     <p className="text-sm text-destructive mt-1">

@@ -69,7 +69,7 @@ const Index = () => {
               </div>
               <h3 className="text-xl font-semibold mb-4">1. Pilih Menu</h3>
               <p className="text-muted-foreground">
-                Login dan pilih makanan atau minuman favoritmu dari katalog menu yang tersedia
+                Login dan pilih makanan atau minuman dari katalog menu
               </p>
             </Card>
 
@@ -149,12 +149,8 @@ const Index = () => {
             </div>
             <div>
               <h3 className="font-bold text-lg mb-4">Kontak</h3>
-              <p className="text-sm text-muted-foreground mb-2">
-                MAN Insan Cendekia Siak<br />
-                Kabupaten Siak, Riau
-              </p>
               <p className="text-sm text-muted-foreground">
-                WhatsApp: 0812-3456-7890
+                WhatsApp: 
               </p>
             </div>
             <div>
@@ -166,7 +162,7 @@ const Index = () => {
             </div>
           </div>
           <div className="mt-8 pt-8 border-t border-border text-center text-sm text-muted-foreground">
-            © 2024 Koperasi Bangkit Insan Cendekia. All rights reserved.
+            © {new Date().getFullYear()} Koperasi Bangkit Insan Cendekia.
           </div>
         </div>
       </footer>

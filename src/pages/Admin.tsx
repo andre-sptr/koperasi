@@ -1,24 +1,17 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { databases, account, APPWRITE_CONFIG } from "@/lib/appwrite";
+import { ID, Query } from "appwrite";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -27,18 +20,18 @@ import { toast } from "sonner";
 import { Plus, Edit, Trash2, Package, ShoppingBag } from "lucide-react";
 
 type Order = {
-  id: string;
-  created_at: string;
+  $id: string;
+  $createdAt: string;
   status: string;
   total_amount: number;
   delivery_method: string;
   student_name: string;
-  student_class: string;
+  student_dorm: string;
   phone: string;
 };
 
 type Product = {
-  id: string;
+  $id: string;
   name: string;
   description: string | null;
   price: number;
@@ -55,25 +48,32 @@ const Admin = () => {
 
   useEffect(() => {
     const checkAdmin = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
+      try {
+        const user = await account.get();
+        if (!user) {
+          navigate("/auth");
+          return;
+        }
+
+        const response = await databases.listDocuments(
+          APPWRITE_CONFIG.databaseId,
+          APPWRITE_CONFIG.collections.userRoles,
+          [
+            Query.equal("user_id", user.$id),
+            Query.equal("role", "admin")
+          ]
+        );
+
+        if (response.total === 0) {
+          toast.error("Akses ditolak. Anda bukan admin.");
+          navigate("/");
+          return;
+        }
+
+        setIsAdmin(true);
+      } catch (error) {
         navigate("/auth");
-        return;
       }
-
-      const { data: roles } = await supabase
-        .from("user_roles")
-        .select("role")
-        .eq("user_id", user.id);
-
-      const adminRole = roles?.some((r) => r.role === "admin");
-      if (!adminRole) {
-        toast.error("Akses ditolak. Anda bukan admin.");
-        navigate("/");
-        return;
-      }
-
-      setIsAdmin(true);
     };
 
     checkAdmin();
@@ -82,13 +82,12 @@ const Admin = () => {
   const { data: orders, isLoading: ordersLoading } = useQuery({
     queryKey: ["admin-orders"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("orders")
-        .select("*")
-        .order("created_at", { ascending: false });
-
-      if (error) throw error;
-      return data as Order[];
+      const response = await databases.listDocuments(
+        APPWRITE_CONFIG.databaseId,
+        APPWRITE_CONFIG.collections.orders,
+        [Query.orderDesc("$createdAt")]
+      );
+      return response.documents as unknown as Order[];
     },
     enabled: isAdmin,
   });
@@ -96,25 +95,24 @@ const Admin = () => {
   const { data: products, isLoading: productsLoading } = useQuery({
     queryKey: ["admin-products"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("products")
-        .select("*")
-        .order("category", { ascending: true });
-
-      if (error) throw error;
-      return data as Product[];
+      const response = await databases.listDocuments(
+        APPWRITE_CONFIG.databaseId,
+        APPWRITE_CONFIG.collections.products,
+        [Query.orderAsc("category")]
+      );
+      return response.documents as unknown as Product[];
     },
     enabled: isAdmin,
   });
 
   const updateOrderStatus = useMutation({
-    mutationFn: async ({ id, status }: { id: string; status: "pending" | "processing" | "ready" | "delivering" | "completed" | "cancelled" }) => {
-      const { error } = await supabase
-        .from("orders")
-        .update({ status })
-        .eq("id", id);
-
-      if (error) throw error;
+    mutationFn: async ({ id, status }: { id: string; status: string }) => {
+      await databases.updateDocument(
+        APPWRITE_CONFIG.databaseId,
+        APPWRITE_CONFIG.collections.orders,
+        id,
+        { status }
+      );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
@@ -127,8 +125,11 @@ const Admin = () => {
 
   const deleteProduct = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from("products").delete().eq("id", id);
-      if (error) throw error;
+      await databases.deleteDocument(
+        APPWRITE_CONFIG.databaseId,
+        APPWRITE_CONFIG.collections.products,
+        id
+      );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-products"] });
@@ -141,12 +142,12 @@ const Admin = () => {
 
   const toggleProductAvailability = useMutation({
     mutationFn: async ({ id, is_available }: { id: string; is_available: boolean }) => {
-      const { error } = await supabase
-        .from("products")
-        .update({ is_available })
-        .eq("id", id);
-
-      if (error) throw error;
+      await databases.updateDocument(
+        APPWRITE_CONFIG.databaseId,
+        APPWRITE_CONFIG.collections.products,
+        id,
+        { is_available }
+      );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-products"] });
@@ -159,15 +160,28 @@ const Admin = () => {
 
   const saveProduct = useMutation({
     mutationFn: async (product: any) => {
+      const payload = {
+        name: product.name,
+        description: product.description,
+        price: parseFloat(product.price),
+        category: product.category,
+        is_available: product.is_available === "true" || product.is_available === true,
+      };
+
       if (product.id) {
-        const { error } = await supabase
-          .from("products")
-          .update(product)
-          .eq("id", product.id);
-        if (error) throw error;
+        await databases.updateDocument(
+          APPWRITE_CONFIG.databaseId,
+          APPWRITE_CONFIG.collections.products,
+          product.id,
+          payload
+        );
       } else {
-        const { error } = await supabase.from("products").insert([product]);
-        if (error) throw error;
+        await databases.createDocument(
+          APPWRITE_CONFIG.databaseId,
+          APPWRITE_CONFIG.collections.products,
+          ID.unique(),
+          payload
+        );
       }
     },
     onSuccess: () => {
@@ -176,22 +190,11 @@ const Admin = () => {
       setShowProductDialog(false);
       setEditingProduct(null);
     },
-    onError: () => {
+    onError: (e) => {
+      console.error(e);
       toast.error("Gagal menyimpan produk");
     },
   });
-
-  const getStatusLabel = (status: string) => {
-    const labels: Record<string, string> = {
-      pending: "Pesanan Diterima",
-      processing: "Sedang Diproses",
-      ready: "Siap Diambil",
-      delivering: "Sedang Diantar",
-      completed: "Selesai",
-      cancelled: "Dibatalkan",
-    };
-    return labels[status] || status;
-  };
 
   const getCategoryLabel = (category: string) => {
     const labels: Record<string, string> = {
@@ -221,7 +224,7 @@ const Admin = () => {
           <Button
             variant="ghost"
             onClick={async () => {
-              await supabase.auth.signOut();
+              await account.deleteSession("current");
               navigate("/");
             }}
           >
@@ -253,21 +256,17 @@ const Admin = () => {
               ) : orders && orders.length > 0 ? (
                 <div className="space-y-4">
                   {orders.map((order) => (
-                    <Card key={order.id} className="p-6">
+                    <Card key={order.$id} className="p-6">
                       <div className="grid md:grid-cols-2 gap-4">
                         <div>
                           <p className="text-sm text-muted-foreground mb-2">
-                            {new Date(order.created_at).toLocaleDateString("id-ID", {
-                              day: "numeric",
-                              month: "long",
-                              year: "numeric",
-                              hour: "2-digit",
-                              minute: "2-digit",
+                            {new Date(order.$createdAt).toLocaleDateString("id-ID", {
+                              day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit",
                             })}
                           </p>
                           <p className="font-semibold text-lg mb-1">{order.student_name}</p>
                           <p className="text-sm text-muted-foreground">
-                            {order.student_class} • {order.phone}
+                            {order.student_dorm} • {order.phone}
                           </p>
                           <p className="text-sm text-muted-foreground">
                             {order.delivery_method === "pickup" ? "Ambil di Koperasi" : "Antar ke Asrama"}
@@ -284,7 +283,7 @@ const Admin = () => {
                             <Select
                               value={order.status}
                               onValueChange={(value) =>
-                                updateOrderStatus.mutate({ id: order.id, status: value as any })
+                                updateOrderStatus.mutate({ id: order.$id, status: value })
                               }
                             >
                               <SelectTrigger className="w-full">
@@ -303,7 +302,7 @@ const Admin = () => {
                           <Button
                             variant="outline"
                             className="mt-4"
-                            onClick={() => navigate(`/orders/${order.id}`)}
+                            onClick={() => navigate(`/orders/${order.$id}`)}
                           >
                             Lihat Detail
                           </Button>
@@ -340,12 +339,12 @@ const Admin = () => {
                         e.preventDefault();
                         const formData = new FormData(e.currentTarget);
                         const product = {
-                          id: editingProduct?.id,
+                          id: editingProduct?.$id,
                           name: formData.get("name") as string,
                           description: formData.get("description") as string,
-                          price: parseFloat(formData.get("price") as string),
+                          price: formData.get("price") as string,
                           category: formData.get("category") as string,
-                          is_available: formData.get("is_available") === "true",
+                          is_available: formData.get("is_available"),
                         };
                         saveProduct.mutate(product);
                       }}
@@ -430,7 +429,7 @@ const Admin = () => {
               ) : products && products.length > 0 ? (
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {products.map((product) => (
-                    <Card key={product.id} className="p-6">
+                    <Card key={product.$id} className="p-6">
                       <div className="flex justify-between items-start mb-3">
                         <Badge variant={product.is_available ? "default" : "secondary"}>
                           {product.is_available ? "Tersedia" : "Habis"}
@@ -460,7 +459,7 @@ const Admin = () => {
                           variant="outline"
                           onClick={() =>
                             toggleProductAvailability.mutate({
-                              id: product.id,
+                              id: product.$id,
                               is_available: !product.is_available,
                             })
                           }
@@ -472,7 +471,7 @@ const Admin = () => {
                           variant="outline"
                           onClick={() => {
                             if (confirm("Yakin ingin menghapus menu ini?")) {
-                              deleteProduct.mutate(product.id);
+                              deleteProduct.mutate(product.$id);
                             }
                           }}
                           className="text-destructive hover:text-destructive"
