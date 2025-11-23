@@ -1,11 +1,23 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { databases, account, APPWRITE_CONFIG } from "@/lib/appwrite";
 import { Query } from "appwrite";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ArrowLeft, Clock, Package, CheckCircle, Truck, XCircle } from "lucide-react";
-import { useEffect } from "react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { ArrowLeft, Clock, Package, CheckCircle, Truck, XCircle, AlertTriangle } from "lucide-react";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
 
 type OrderDetail = {
   $id: string;
@@ -32,6 +44,9 @@ type OrderItem = {
 const OrderDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [canCancel, setCanCancel] = useState(false);
+  const [cancelTimer, setCancelTimer] = useState("");
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -75,6 +90,53 @@ const OrderDetail = () => {
       return response.documents as unknown as OrderItem[];
     },
   });
+
+  useEffect(() => {
+    if (!order) return;
+
+    const calculateTimeLeft = () => {
+      const createdTime = new Date(order.$createdAt).getTime();
+      const currentTime = new Date().getTime();
+      const timeDiff = currentTime - createdTime;
+      const threeMinutesInMs = 3 * 60 * 1000;
+
+      if (timeDiff < threeMinutesInMs && order.status === 'pending') {
+        setCanCancel(true);
+        
+        const remainingMs = threeMinutesInMs - timeDiff;
+        const minutes = Math.floor(remainingMs / 60000);
+        const seconds = Math.floor((remainingMs % 60000) / 1000);
+        setCancelTimer(`${minutes}:${seconds < 10 ? '0' : ''}${seconds}`);
+      } else {
+        setCanCancel(false);
+        setCancelTimer("");
+      }
+    };
+
+    calculateTimeLeft();
+    const interval = setInterval(calculateTimeLeft, 1000);
+
+    return () => clearInterval(interval);
+  }, [order]);
+
+  const processCancellation = async () => {
+    if (!order) return;
+
+    try {
+      await databases.updateDocument(
+        APPWRITE_CONFIG.databaseId,
+        APPWRITE_CONFIG.collections.orders,
+        order.$id,
+        { status: "cancelled" }
+      );
+      
+      toast.success("Pesanan berhasil dibatalkan");
+      queryClient.invalidateQueries({ queryKey: ["order", id] });
+    } catch (error) {
+      console.error(error);
+      toast.error("Gagal membatalkan pesanan");
+    }
+  };
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -130,9 +192,7 @@ const OrderDetail = () => {
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <p className="text-muted-foreground mb-4">Pesanan tidak ditemukan</p>
-          <Link to="/orders">
-            <Button>Kembali</Button>
-          </Link>
+          <Button onClick={() => navigate(-1)}>Kembali</Button>
         </div>
       </div>
     );
@@ -143,12 +203,10 @@ const OrderDetail = () => {
       <nav className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-md border-b border-border">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">
           <Link to="/" className="font-bold text-lg">Koperasi MAN IC Siak</Link>
-          <Link to="/orders">
-            <Button variant="ghost">
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Kembali
-            </Button>
-          </Link>
+          <Button variant="ghost" onClick={() => navigate(-1)}>
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Kembali
+          </Button>
         </div>
       </nav>
 
@@ -158,16 +216,59 @@ const OrderDetail = () => {
 
           {/* Status */}
           <Card className={`p-8 mb-6 border-2 ${getStatusColor(order.status)}`}>
-            <div className="flex items-center gap-4">
-              {getStatusIcon(order.status)}
-              <div>
-                <h2 className="text-2xl font-bold mb-1">{getStatusLabel(order.status)}</h2>
-                <p className="text-sm opacity-75">
-                  {new Date(order.$createdAt).toLocaleDateString("id-ID", {
-                    day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit",
-                  })}
-                </p>
+            <div className="flex items-center justify-between flex-wrap gap-4">
+              <div className="flex items-center gap-4">
+                {getStatusIcon(order.status)}
+                <div>
+                  <h2 className="text-2xl font-bold mb-1">{getStatusLabel(order.status)}</h2>
+                  <p className="text-sm opacity-75">
+                    {new Date(order.$createdAt).toLocaleDateString("id-ID", {
+                      day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit",
+                    })}
+                  </p>
+                </div>
               </div>
+              
+              {/* Tombol Cancel dengan Alert Dialog */}
+              {canCancel && (
+                <div className="flex flex-col items-end">
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button 
+                        variant="destructive" 
+                        size="sm" 
+                        className="mb-1"
+                      >
+                        Batalkan Pesanan
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Batalkan Pesanan?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          Apakah Anda yakin ingin membatalkan pesanan ini? 
+                          <br />
+                          Tindakan ini tidak dapat dibatalkan.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Tidak</AlertDialogCancel>
+                        <AlertDialogAction 
+                          onClick={processCancellation}
+                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
+                          Ya, Batalkan
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                  
+                  <span className="text-xs text-red-500 font-medium flex items-center gap-1">
+                    <Clock className="h-3 w-3" />
+                    Bisa batal dalam: {cancelTimer}
+                  </span>
+                </div>
+              )}
             </div>
           </Card>
 

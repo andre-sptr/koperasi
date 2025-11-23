@@ -1,9 +1,41 @@
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ShoppingBag, Clock, MapPin, CheckCircle, ArrowRight } from "lucide-react";
-import { Link } from "react-router-dom";
+import { ShoppingBag, Clock, MapPin, CheckCircle, ArrowRight, LogOut, User, Phone } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { account } from "@/lib/appwrite";
+import { toast } from "sonner";
 
 const Index = () => {
+  const navigate = useNavigate();
+  const [user, setUser] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const checkUser = async () => {
+      try {
+        const session = await account.get();
+        setUser(session);
+      } catch (error) {
+        console.log("User belum login");
+      } finally {
+        setLoading(false);
+      }
+    };
+    checkUser();
+  }, []);
+
+  const handleLogout = async () => {
+    try {
+      await account.deleteSession("current");
+      setUser(null);
+      toast.success("Berhasil keluar");
+      navigate("/"); 
+    } catch (error) {
+      toast.error("Gagal keluar");
+    }
+  };
+
   return (
     <div className="min-h-screen">
       {/* Navigation */}
@@ -13,16 +45,42 @@ const Index = () => {
             <ShoppingBag className="h-6 w-6 text-primary" />
             <span className="font-bold text-lg">Koperasi MAN IC Siak</span>
           </Link>
+          
           <div className="flex items-center gap-4">
             <Link to="/menu">
               <Button variant="ghost">Menu</Button>
             </Link>
-            <Link to="/orders">
-              <Button variant="ghost">Pesanan Saya</Button>
-            </Link>
-            <Link to="/auth">
-              <Button className="btn-primary">Masuk</Button>
-            </Link>
+            
+            {/* 3. Logika Tampilan Berdasarkan User */}
+            {!loading && (
+              <>
+                {user ? (
+                  <div className="flex items-center gap-3">
+                    <Link to="/orders">
+                      <Button variant="ghost">Pesanan Saya</Button>
+                    </Link>
+                    <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-secondary rounded-full">
+                      <User className="h-4 w-4 text-primary" />
+                      <span className="text-sm font-medium truncate max-w-[100px]">
+                        {user.name}
+                      </span>
+                    </div>
+                    <Button 
+                      variant="destructive" 
+                      size="icon" 
+                      onClick={handleLogout}
+                      title="Keluar"
+                    >
+                      <LogOut className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ) : (
+                  <Link to="/auth">
+                    <Button className="btn-primary">Masuk</Button>
+                  </Link>
+                )}
+              </>
+            )}
           </div>
         </div>
       </nav>
@@ -47,9 +105,10 @@ const Index = () => {
                 <ArrowRight className="ml-2 h-5 w-5" />
               </Button>
             </Link>
-            <Link to="/auth">
+            {/* Tombol Pesan Sekarang hanya muncul jika belum login, atau diarahkan ke menu jika sudah login */}
+            <Link to={user ? "/menu" : "/auth"}>
               <Button size="lg" variant="outline" className="text-lg px-8">
-                Pesan Sekarang
+                {user ? "Pesan Sekarang" : "Daftar / Masuk"}
               </Button>
             </Link>
           </div>
@@ -119,50 +178,93 @@ const Index = () => {
         </div>
       </section>
 
-      {/* CTA Section */}
-      <section className="py-20 px-4 gradient-hero">
-        <div className="container mx-auto text-center max-w-3xl">
-          <h2 className="text-3xl md:text-4xl font-bold text-white mb-6">
-            Mulai Pesan Sekarang!
-          </h2>
-          <p className="text-white/90 text-lg mb-8">
-            Daftar sekarang dan nikmati kemudahan pesan makanan & minuman dari asrama
-          </p>
-          <Link to="/auth">
-            <Button size="lg" variant="secondary" className="text-lg px-8">
-              Daftar Gratis
-              <ArrowRight className="ml-2 h-5 w-5" />
-            </Button>
-          </Link>
-        </div>
-      </section>
+      {/* CTA Section (Hanya tampil jika belum login) */}
+      {!user && (
+        <section className="py-20 px-4 gradient-hero">
+          <div className="container mx-auto text-center max-w-3xl">
+            <h2 className="text-3xl md:text-4xl font-bold text-white mb-6">
+              Mulai Pesan Sekarang!
+            </h2>
+            <p className="text-white/90 text-lg mb-8">
+              Daftar sekarang dan nikmati kemudahan pesan makanan & minuman dari asrama
+            </p>
+            <Link to="/auth">
+              <Button size="lg" variant="secondary" className="text-lg px-8">
+                Daftar Gratis
+                <ArrowRight className="ml-2 h-5 w-5" />
+              </Button>
+            </Link>
+          </div>
+        </section>
+      )}
 
       {/* Footer */}
-      <footer className="py-12 px-4 bg-secondary/30 border-t border-border">
-        <div className="container mx-auto max-w-6xl">
-          <div className="grid md:grid-cols-3 gap-8">
-            <div>
-              <h3 className="font-bold text-lg mb-4">Koperasi MAN IC Siak</h3>
-              <p className="text-sm text-muted-foreground">
-                Koperasi online khusus siswa MAN IC Siak untuk kemudahan pemesanan makanan dan minuman.
+      <footer className="bg-secondary/30 border-t border-border pt-16 pb-8">
+        <div className="container mx-auto px-4 max-w-6xl">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-10 mb-12">
+            
+            {/* Kolom 1: Tentang */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <ShoppingBag className="h-6 w-6 text-primary" />
+                <h3 className="font-bold text-xl">Koperasi MAN IC Siak</h3>
+              </div>
+              <p className="text-sm text-muted-foreground leading-relaxed max-w-xs">
+                Platform koperasi online resmi untuk siswa MAN Insan Cendekia Siak. 
+                Nikmati kemudahan pemesanan kebutuhan harian langsung dari asrama.
               </p>
             </div>
+
+            {/* Kolom 2: Kontak */}
             <div>
-              <h3 className="font-bold text-lg mb-4">Kontak</h3>
-              <p className="text-sm text-muted-foreground">
-                WhatsApp: 
-              </p>
+              <h3 className="font-bold text-lg mb-6">Hubungi Kami</h3>
+              <ul className="space-y-4">
+                <li>
+                  <a 
+                    href="https://wa.me/628123456789"
+                    target="_blank" 
+                    rel="noreferrer"
+                    className="flex items-center gap-3 text-sm text-muted-foreground hover:text-primary transition-colors group"
+                  >
+                    <div className="h-8 w-8 rounded-full bg-background border border-border flex items-center justify-center group-hover:border-primary transition-colors">
+                      <Phone className="h-4 w-4" />
+                    </div>
+                    <span>WhatsApp Admin</span>
+                  </a>
+                </li>
+                <li>
+                  <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                    <div className="h-8 w-8 rounded-full bg-background border border-border flex items-center justify-center">
+                      <MapPin className="h-4 w-4" />
+                    </div>
+                    <span>Kampus MAN IC Siak</span>
+                  </div>
+                </li>
+              </ul>
             </div>
+
+            {/* Kolom 3: Jam Operasional */}
             <div>
-              <h3 className="font-bold text-lg mb-4">Jam Operasional</h3>
-              <p className="text-sm text-muted-foreground">
-                Senin - Jumat: 07.00 - 20.00<br />
-                Sabtu - Minggu: 08.00 - 18.00
-              </p>
+              <h3 className="font-bold text-lg mb-6">Jam Operasional</h3>
+              <div className="space-y-3 text-sm text-muted-foreground">
+                <div className="flex justify-between items-center border-b border-border/50 pb-2 border-dashed">
+                  <span>Senin - Jumat</span>
+                  <span className="font-medium text-foreground">07.00 - 20.00</span>
+                </div>
+                <div className="flex justify-between items-center border-b border-border/50 pb-2 border-dashed">
+                  <span>Sabtu - Minggu</span>
+                  <span className="font-medium text-foreground">08.00 - 18.00</span>
+                </div>
+              </div>
             </div>
+
           </div>
-          <div className="mt-8 pt-8 border-t border-border text-center text-sm text-muted-foreground">
-            © {new Date().getFullYear()} Koperasi Bangkit Insan Cendekia.
+
+          {/* Copyright */}
+          <div className="pt-8 border-t border-border text-center">
+            <p className="text-sm text-muted-foreground">
+              &copy; {new Date().getFullYear()} <span className="font-semibold text-primary">Koperasi Bangkit Insan Cendekia</span>.
+            </p>
           </div>
         </div>
       </footer>

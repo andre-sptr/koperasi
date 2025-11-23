@@ -96,7 +96,6 @@ const Orders = () => {
           <Link to="/" className="font-bold text-lg">Koperasi MAN IC Siak</Link>
           <div className="flex items-center gap-4">
             <Link to="/menu"><Button variant="ghost">Menu</Button></Link>
-            <Button variant="ghost" onClick={async () => { await account.deleteSession("current"); navigate("/"); }}>Keluar</Button>
           </div>
         </div>
       </nav>
@@ -111,7 +110,7 @@ const Orders = () => {
           ) : orders && orders.length > 0 ? (
             <div className="space-y-4">
               {orders.map((order) => (
-                <Link key={order.$id} to={`/orders/${order.$id}`}>
+                <Link key={order.$id} to={`/orders/${order.$id}`} className="block">
                   <Card className="p-6 card-hover cursor-pointer">
                     <div className="flex items-start justify-between mb-4">
                       <div>

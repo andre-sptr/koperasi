@@ -115,7 +115,6 @@ const Checkout = () => {
           status: "pending",
           total_amount: totalPrice,
           notes: data.notes || null,
-          created_at: new Date().toISOString(),
         }
       );
 
@@ -211,7 +210,7 @@ const Checkout = () => {
                     <Input
                       id="roomNumber"
                       {...register("roomNumber")}
-                      placeholder="Contoh: 101"
+                      placeholder="Contoh: 10"
                       className="mt-1"
                     />
                     {errors.roomNumber && (
@@ -225,7 +224,7 @@ const Checkout = () => {
                   <Input
                     id="phone"
                     {...register("phone")}
-                    placeholder="08123456789"
+                    placeholder="08xxxxxxxxxx"
                   />
                   {errors.phone && (
                     <p className="text-sm text-destructive mt-1">{errors.phone.message}</p>
@@ -237,8 +236,8 @@ const Checkout = () => {
             <Card className="p-6">
               <h2 className="text-xl font-semibold mb-4">Metode Pengambilan</h2>
               <RadioGroup
-                defaultValue="pickup"
-                onValueChange={(value) => register("deliveryMethod").onChange({ target: { value } })}
+                value={watch("deliveryMethod")} 
+                onValueChange={(value) => setValue("deliveryMethod", value as "pickup" | "delivery")}
               >
                 <div className="flex items-center space-x-2 p-4 rounded-lg border border-border cursor-pointer hover:bg-secondary/50">
                   <RadioGroupItem value="pickup" id="pickup" />
@@ -260,6 +259,7 @@ const Checkout = () => {
                 </div>
               </RadioGroup>
 
+              {/* Input ini otomatis muncul jika metode 'delivery' terdeteksi dengan benar */}
               {deliveryMethod === "delivery" && (
                 <div className="mt-4 space-y-4">
                   <div>

@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { account, databases, APPWRITE_CONFIG } from "@/lib/appwrite";
-import { ID, Permission, Role } from "appwrite";
+import { ID, Permission, Role, Query } from "appwrite";
 import { toast } from "sonner";
 import { ShoppingBag } from "lucide-react";
 
@@ -38,7 +38,23 @@ const Auth = () => {
     const checkUser = async () => {
       try {
         const user = await account.get();
-        if (user) navigate("/menu");
+        
+        if (user) {
+          const adminCheck = await databases.listDocuments(
+            APPWRITE_CONFIG.databaseId,
+            APPWRITE_CONFIG.collections.userRoles,
+            [
+              Query.equal("user_id", user.$id),
+              Query.equal("role", "admin")
+            ]
+          );
+
+          if (adminCheck.total > 0) {
+            navigate("/admin");
+          } else {
+            navigate("/menu");
+          }
+        }
       } catch (error) {
       }
     };
@@ -57,9 +73,24 @@ const Auth = () => {
     setLoading(true);
     try {
       await account.createEmailPasswordSession(data.email, data.password);
+
+      const user = await account.get();
+      const adminCheck = await databases.listDocuments(
+        APPWRITE_CONFIG.databaseId,
+        APPWRITE_CONFIG.collections.userRoles,
+        [
+          Query.equal("user_id", user.$id),
+          Query.equal("role", "admin")
+        ]
+      );
       
       toast.success("Login berhasil!");
-      navigate("/menu");
+
+      if (adminCheck.total > 0) {
+        navigate("/admin");
+      } else {
+        navigate("/menu");
+      }
     } catch (error: any) {
       toast.error(error.message || "Login gagal");
     } finally {
@@ -178,7 +209,7 @@ const Auth = () => {
                     id="signup-phone"
                     type="tel"
                     {...signupForm.register("phone")}
-                    placeholder="08123456789"
+                    placeholder="08xxxxxxxxxx"
                   />
                   {signupForm.formState.errors.phone && (
                     <p className="text-sm text-destructive mt-1">
